@@ -22,25 +22,36 @@ cd /d "%~dp0"
 title Hashmi Real Estate Builders - Installer Build
 
 echo.
-echo === [1/3] Building frontend (React) ===
+echo === [0/4] Cleaning old dist folder ===
+if exist dist rmdir /s /q dist
+echo Cleaned.
+
+echo.
+echo === [1/4] Building frontend (React) ===
 call npm --prefix frontend run build
 if %errorlevel% NEQ 0 goto :fail
 
 echo.
-echo === [2/3] Building backend (TypeScript) ===
+echo === [2/4] Building backend (TypeScript) ===
 call npm --prefix backend run build
 if %errorlevel% NEQ 0 goto :fail
 
 echo.
-echo === [3/3] Packaging Setup.exe and Portable.exe ===
-call npx electron-builder --win nsis portable --x64
+echo === [3/4] Validating version bump ===
+call node scripts/validate-version.js
+if %errorlevel% NEQ 0 goto :fail
+
+echo.
+echo === [4/4] Packaging NSIS installer ===
+call npx electron-builder --win nsis --x64
 if %errorlevel% NEQ 0 goto :fail
 
 echo.
 echo =====================================================================
-echo  Build complete. Output is in the "dist" folder:
-echo    - Hashmi Real Estate Builders-1.0.0-Setup.exe   (NSIS installer wizard)
-echo    - Hashmi Real Estate Builders-1.0.0-Portable.exe (single-file portable)
+echo  Build complete. Clean output is in the "dist" folder:
+echo    - Hashmi Real Estate Builders-Setup.exe   (NSIS installer)
+echo    - latest.yml                              (Update manifest)
+echo    - Hashmi Real Estate Builders-Setup.exe.blockmap
 echo =====================================================================
 echo.
 pause

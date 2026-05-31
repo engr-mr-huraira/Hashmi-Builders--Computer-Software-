@@ -22,9 +22,10 @@
     "build:frontend": "npm --prefix frontend run build",
     "build:backend": "npm --prefix backend run build",
     "build:all": "npm run build:frontend && npm run build:backend",
+    "clean": "if exist dist rmdir /s /q dist",
     "pack": "electron-builder --dir",
-    "build:exe": "node scripts/validate-version.js && npm run build:all && electron-builder --win nsis --x64",
-    "build:installer": "npm run build:all && electron-builder --win nsis --x64"
+    "build:exe": "npm run clean && node scripts/validate-version.js && npm run build:all && electron-builder --win nsis --x64",
+    "build:installer": "npm run clean && npm run build:all && electron-builder --win nsis --x64"
   },
   "dependencies": {
     "electron-store": "^8.1.0",
@@ -52,7 +53,7 @@
     "appId": "com.hashmibuilders.realestatecrm",
     "productName": "Hashmi Real Estate Builders",
     "copyright": "Copyright © Hashmi Builders",
-    "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "artifactName": "${productName}-Setup.${ext}",
     "directories": {
       "output": "dist",
       "buildResources": "electron/resources"
@@ -120,8 +121,7 @@
       "uninstallerSidebar": "electron/resources/uninstallerSidebar.bmp",
       "installerHeaderIcon": "electron/resources/icon.ico",
       "uninstallDisplayName": "Hashmi Real Estate Builders ${version}",
-      "include": "electron/resources/installer.nsh",
-      "artifactName": "${productName}-${version}-Setup.${ext}"
+      "include": "electron/resources/installer.nsh"
     }
   }
 }
