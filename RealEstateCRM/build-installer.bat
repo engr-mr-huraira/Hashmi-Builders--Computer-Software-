@@ -49,9 +49,9 @@ if %errorlevel% NEQ 0 goto :fail
 echo.
 echo =====================================================================
 echo  Build complete. Clean output is in the "dist" folder:
-echo    - Hashmi Real Estate Builders-Setup.exe   (NSIS installer)
-echo    - latest.yml                              (Update manifest)
-echo    - Hashmi Real Estate Builders-Setup.exe.blockmap
+echo    - Hashmi Real Estate Builders-^<version^>-Setup.exe   (NSIS installer)
+echo    - latest.yml                                           (Update manifest)
+echo    - Hashmi Real Estate Builders-^<version^>-Setup.exe.blockmap
 echo =====================================================================
 echo.
 pause

@@ -1,6 +1,6 @@
 {
   "name": "real-estate-crm",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Hashmi Real Estate Builders - Offline-first desktop CRM for real estate and housing society management",
   "repository": {
     "type": "git",
@@ -53,7 +53,7 @@
     "appId": "com.hashmibuilders.realestatecrm",
     "productName": "Hashmi Real Estate Builders",
     "copyright": "Copyright © Hashmi Builders",
-    "artifactName": "${productName}-Setup.${ext}",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "directories": {
       "output": "dist",
       "buildResources": "electron/resources"
@@ -121,7 +121,8 @@
       "uninstallerSidebar": "electron/resources/uninstallerSidebar.bmp",
       "installerHeaderIcon": "electron/resources/icon.ico",
       "uninstallDisplayName": "Hashmi Real Estate Builders ${version}",
-      "include": "electron/resources/installer.nsh"
+      "include": "electron/resources/installer.nsh",
+      "artifactName": "${productName}-${version}-Setup.${ext}"
     }
   }
 }
