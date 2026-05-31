@@ -1,0 +1,17 @@
+{
+  "name": "realestate-crm-electron",
+  "version": "1.0.0",
+  "description": "Electron desktop runtime for Hashmi Real Estate Builders",
+  "main": "main/main.js",
+  "scripts": {
+    "dev": "electron .",
+    "build": "echo \"Electron runtime - no build step required\""
+  },
+  "author": "Hashmi Builders",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.1.4",
+    "pg": "^8.11.3"
+  }
+}

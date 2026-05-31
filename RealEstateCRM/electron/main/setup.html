@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Hashmi Real Estate Builders - Setup</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;background:#f8fafc}
+    .app{display:grid;grid-template-columns:280px 1fr;height:100%}
+    .side{background:linear-gradient(160deg,#0f172a 0%,#1e3a8a 60%,#1d4ed8 100%);color:#fff;padding:28px 24px;display:flex;flex-direction:column;justify-content:space-between}
+    .brand{display:flex;align-items:center;gap:12px}
+    .brand .logo-card{background:#fff;border-radius:14px;padding:6px;box-shadow:0 12px 30px rgba(0,0,0,.35)}
+    .brand .logo-card img{display:block;height:54px;width:54px;border-radius:9px;object-fit:cover}
+    .brand h1{font-size:16px;font-weight:700;line-height:1.15}
+    .brand p{font-size:11px;color:rgba(219,234,254,.85);margin-top:2px}
+    .steps{margin-top:32px;list-style:none}
+    .steps li{padding:10px 12px;border-radius:10px;margin-bottom:6px;font-size:13px;display:flex;gap:10px;align-items:center;color:rgba(255,255,255,.7)}
+    .steps li.active{background:rgba(255,255,255,.12);color:#fff;font-weight:600}
+    .steps li .num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:99px;background:rgba(255,255,255,.18);font-size:11px;font-weight:700}
+    .steps li.active .num{background:#fff;color:#1d4ed8}
+    .copy{font-size:10px;color:rgba(191,219,254,.6);letter-spacing:.12em;text-transform:uppercase}
+    .body{padding:36px 44px;overflow:auto}
+    .body h2{font-size:22px;font-weight:700}
+    .body p.lead{margin-top:6px;color:#475569;font-size:13px;max-width:520px}
+    .form{margin-top:22px;display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:560px}
+    .form label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:5px}
+    .form input,.form select{width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:9px;font-size:13px;background:#fff;outline:none}
+    .form input:focus,.form select:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.15)}
+    .form .full{grid-column:1 / -1}
+    .actions{margin-top:24px;display:flex;gap:10px;justify-content:flex-end;align-items:center;max-width:560px}
+    .btn{padding:9px 16px;border-radius:9px;font-size:13px;font-weight:600;border:1px solid transparent;cursor:pointer}
+    .btn-secondary{background:#fff;color:#1f2937;border-color:#cbd5e1}
+    .btn-primary{background:#1d4ed8;color:#fff}
+    .btn-primary:disabled{opacity:.6;cursor:not-allowed}
+    .status{font-size:12px;color:#475569;margin-right:auto}
+    .status.ok{color:#059669}
+    .status.err{color:#dc2626}
+    .legal{margin-top:18px;border:1px solid #e2e8f0;background:#f1f5f9;border-radius:10px;padding:14px;max-height:160px;overflow:auto;font-size:11px;color:#475569;max-width:560px}
+    .stepPanel{display:none}
+    .stepPanel.active{display:block}
+    .check{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:#475569;max-width:560px;margin-top:14px}
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div>
+      <div class="brand">
+        <div class="logo-card"><img src="../resources/logo.jpeg" alt="Hashmi Real Estate Builders" /></div>
+        <div>
+          <h1>Hashmi Real Estate<br/>Builders</h1>
+          <p>Enterprise CRM · Setup</p>
+        </div>
+      </div>
+      <ul class="steps" id="steps">
+        <li data-step="welcome" class="active"><span class="num">1</span> Welcome</li>
+        <li data-step="license"><span class="num">2</span> License</li>
+        <li data-step="database"><span class="num">3</span> Database</li>
+        <li data-step="finish"><span class="num">4</span> Finish</li>
+      </ul>
+    </div>
+    <div class="copy">© Hashmi Builders</div>
+  </aside>
+
+  <main class="body">
+    <section id="welcome" class="stepPanel active">
+      <h2>Welcome to Hashmi Real Estate Builders</h2>
+      <p class="lead">An offline-first desktop CRM for real-estate and housing-society operations. The wizard will configure your local PostgreSQL connection and prepare the database.</p>
+      <div class="actions"><button class="btn btn-primary" data-go="license">Get Started</button></div>
+    </section>
+
+    <section id="license" class="stepPanel">
+      <h2>License Agreement</h2>
+      <p class="lead">Please review and accept the license terms before continuing.</p>
+      <div class="legal" id="licenseText">Loading...</div>
+      <label class="check"><input type="checkbox" id="acceptLicense" /> I accept the terms of the license agreement.</label>
+      <div class="actions">
+        <button class="btn btn-secondary" data-go="welcome">Back</button>
+        <button class="btn btn-primary" id="acceptBtn" disabled data-go="database">Accept &amp; Continue</button>
+      </div>
+    </section>
+
+    <section id="database" class="stepPanel">
+      <h2>Database Configuration</h2>
+      <p class="lead">Enter your PostgreSQL details. The database will be created automatically if it does not exist.</p>
+      <div class="form">
+        <div><label>Host</label><input id="host" value="localhost" /></div>
+        <div><label>Port</label><input id="port" value="5432" /></div>
+        <div><label>Database Name</label><input id="database" value="realestate_crm" /></div>
+        <div><label>User</label><input id="user" value="postgres" /></div>
+        <div class="full"><label>Password</label><input id="password" type="password" value="" /></div>
+      </div>
+      <div class="actions">
+        <span class="status" id="dbStatus"></span>
+        <button class="btn btn-secondary" data-go="license">Back</button>
+        <button class="btn btn-secondary" id="testBtn">Test Connection</button>
+        <button class="btn btn-primary" id="installBtn">Install</button>
+      </div>
+    </section>
+
+    <section id="finish" class="stepPanel">
+      <h2>You're all set</h2>
+      <p class="lead">Configuration saved. The application will now start.</p>
+      <div class="actions"><button class="btn btn-primary" id="finishBtn">Launch Application</button></div>
+    </section>
+  </main>
+</div>
+<script>
+  const license = `Hashmi Real Estate Builders - End-User License Agreement\n\nCopyright © Hashmi Real Estate Builders.\n\nThis software is licensed, not sold. Subject to the terms of this agreement, you are granted a non-exclusive, non-transferable licence to install and use the software on a single computer for the purpose of managing real-estate operations.\n\nYou may not redistribute, sublicense, decompile, reverse engineer, or otherwise exploit the software except as expressly permitted by applicable law.\n\nThe software is provided "AS IS", without warranty of any kind. The authors shall not be liable for any damages arising from the use of the software.\n\nDeveloped by Prime Softnox Solutions.\n`;
+  document.getElementById('licenseText').textContent = license;
+
+  function go(step){
+    document.querySelectorAll('.stepPanel').forEach(p => p.classList.toggle('active', p.id === step));
+    document.querySelectorAll('#steps li').forEach(p => p.classList.toggle('active', p.dataset.step === step));
+  }
+  document.querySelectorAll('[data-go]').forEach(el => {
+    el.addEventListener('click', () => {
+      if (el.id === 'acceptBtn' && !document.getElementById('acceptLicense').checked) return;
+      go(el.dataset.go);
+    });
+  });
+  document.getElementById('acceptLicense').addEventListener('change', e => {
+    document.getElementById('acceptBtn').disabled = !e.target.checked;
+  });
+
+  function getCfg(){
+    return {
+      host: document.getElementById('host').value.trim(),
+      port: document.getElementById('port').value.trim() || '5432',
+      database: document.getElementById('database').value.trim(),
+      user: document.getElementById('user').value.trim(),
+      password: document.getElementById('password').value,
+    };
+  }
+
+  document.getElementById('testBtn').addEventListener('click', async () => {
+    const status = document.getElementById('dbStatus');
+    status.className = 'status'; status.textContent = 'Testing...';
+    try {
+      const r = await window.desktopAPI.testDb(getCfg());
+      if (r.ok) { status.className = 'status ok'; status.textContent = '✓ Connection OK'; }
+      else { status.className = 'status err'; status.textContent = '✗ ' + (r.error || 'Connection failed'); }
+    } catch (e) { status.className = 'status err'; status.textContent = '✗ ' + e.message; }
+  });
+
+  document.getElementById('installBtn').addEventListener('click', async () => {
+    const cfg = getCfg();
+    if (!cfg.host || !cfg.database || !cfg.user) {
+      document.getElementById('dbStatus').className = 'status err';
+      document.getElementById('dbStatus').textContent = 'Host, database name and user are required';
+      return;
+    }
+    document.getElementById('installBtn').disabled = true;
+    window.desktopAPI.completeSetup(cfg);
+    go('finish');
+  });
+
+  document.getElementById('finishBtn').addEventListener('click', () => window.close());
+</script>
+</body>
+</html>

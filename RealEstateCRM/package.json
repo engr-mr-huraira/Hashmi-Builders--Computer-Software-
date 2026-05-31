@@ -1,0 +1,127 @@
+{
+  "name": "real-estate-crm",
+  "version": "1.0.1",
+  "description": "Hashmi Real Estate Builders - Offline-first desktop CRM for real estate and housing society management",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_GITHUB_OWNER/YOUR_GITHUB_REPO.git"
+  },
+  "main": "electron/main/main.js",
+  "author": {
+    "name": "Hashmi Builders",
+    "email": "support@hashmibuilders.com"
+  },
+  "homepage": "https://hashmibuilders.com",
+  "license": "UNLICENSED",
+  "scripts": {
+    "postinstall": "npm --prefix frontend install && npm --prefix backend install",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:electron": "electron .",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:electron\"",
+    "build:frontend": "npm --prefix frontend run build",
+    "build:backend": "npm --prefix backend run build",
+    "build:all": "npm run build:frontend && npm run build:backend",
+    "pack": "electron-builder --dir",
+    "build:exe": "node scripts/validate-version.js && npm run build:all && electron-builder --win nsis --x64",
+    "build:installer": "npm run build:all && electron-builder --win nsis --x64"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.1.4",
+    "express": "^4.18.2",
+    "pg": "^8.11.3",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.1.5",
+    "multer": "^1.4.5-lts.1",
+    "uuid": "^9.0.1",
+    "joi": "^17.11.0",
+    "winston": "^3.11.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.hashmibuilders.realestatecrm",
+    "productName": "Hashmi Real Estate Builders",
+    "copyright": "Copyright © Hashmi Builders",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "electron/resources"
+    },
+    "files": [
+      "electron/**/*",
+      "frontend/dist/**/*",
+      "backend/dist/**/*",
+      "backend/package.json",
+      "backend/database/schema.sql",
+      "package.json",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/*.{ts,map}",
+      "!**/.{eslintrc,prettierrc}"
+    ],
+    "extraResources": [
+      {
+        "from": "electron/resources/LICENSE.txt",
+        "to": "LICENSE.txt"
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "backend/**/*",
+      "electron/main/**/*",
+      "electron/preload/**/*",
+      "node_modules/**/*"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "YOUR_GITHUB_OWNER",
+        "repo": "YOUR_GITHUB_REPO",
+        "channel": "latest",
+        "releaseType": "release"
+      }
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "electron/resources/icon.ico",
+      "publisherName": "Hashmi Real Estate Builders",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Hashmi Real Estate Builders",
+      "menuCategory": "Hashmi Builders",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "displayLanguageSelector": false,
+      "installerLanguages": ["en_US"],
+      "license": "electron/resources/LICENSE.txt",
+      "installerIcon": "electron/resources/icon.ico",
+      "uninstallerIcon": "electron/resources/icon.ico",
+      "installerHeader": "electron/resources/installerHeader.bmp",
+      "installerSidebar": "electron/resources/installerSidebar.bmp",
+      "uninstallerSidebar": "electron/resources/uninstallerSidebar.bmp",
+      "installerHeaderIcon": "electron/resources/icon.ico",
+      "uninstallDisplayName": "Hashmi Real Estate Builders ${version}",
+      "include": "electron/resources/installer.nsh",
+      "artifactName": "${productName}-${version}-Setup.${ext}"
+    }
+  }
+}

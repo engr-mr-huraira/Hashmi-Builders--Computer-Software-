@@ -1,0 +1,23 @@
+Hashmi Real Estate Builders - End User License Agreement
+
+Copyright (c) Hashmi Real Estate Builders. All rights reserved.
+
+1. GRANT OF LICENSE
+This software is licensed for internal business use within your organization.
+
+2. RESTRICTIONS
+You may not reverse engineer, decompile, or disassemble the software except
+to the extent permitted by applicable law.
+
+3. DATA OWNERSHIP
+All customer, financial, and business data stored using this software
+remains the sole property of the licensee.
+
+4. WARRANTY DISCLAIMER
+THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND.
+
+5. LIMITATION OF LIABILITY
+IN NO EVENT SHALL HASHMI BUILDERS BE LIABLE FOR ANY DAMAGES ARISING OUT
+OF THE USE OF THIS SOFTWARE.
+
+By installing this software you agree to the terms above.

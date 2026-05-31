@@ -1,0 +1,13 @@
+node_modules/
+dist/
+build/
+.env
+*.log
+.DS_Store
+coverage/
+frontend/dist/
+backend/dist/
+backend/uploads/
+backend/backups/
+electron/resources/*.ico
+sync-engine/*.log
