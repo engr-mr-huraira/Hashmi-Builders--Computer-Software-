@@ -40,6 +40,11 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   runManualUpdate: (path) => ipcRenderer.invoke('updates:run-manual', path),
   getUpdateConfig: () => ipcRenderer.invoke('updates:get-config'),
   configureUpdates: (url) => ipcRenderer.invoke('updates:configure', url),
+
+  changeUninstallPassword: (current, next) => ipcRenderer.invoke('security:change-uninstall-password', current, next),
+  getSecurityLogs: () => ipcRenderer.invoke('security:get-logs'),
+  openSecurityLogs: () => ipcRenderer.invoke('security:open-logs'),
+
   onUpdateEvent: (cb) => {
     const handler = (_, payload) => cb && cb(payload)
     ipcRenderer.on('updates:event', handler)

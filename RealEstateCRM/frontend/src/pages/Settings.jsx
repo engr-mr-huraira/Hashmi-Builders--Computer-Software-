@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, Download, RefreshCcw, Settings as SettingsIcon, Sparkles, Power, FileText, Upload } from 'lucide-react'
+import { CheckCircle2, Download, RefreshCcw, Settings as SettingsIcon, Sparkles, Power, FileText, Upload, Shield, Lock } from 'lucide-react'
 
 /**
  * Settings page - includes the in-app Software Update center.
@@ -20,6 +20,9 @@ export default function Settings() {
     error: null,
   })
   const [manualPath, setManualPath] = useState(null)
+  const [pwdForm, setPwdForm] = useState({ current: '', next: '', confirm: '' })
+  const [pwdBusy, setPwdBusy] = useState(false)
+  const [pwdMsg, setPwdMsg] = useState('')
 
   useEffect(() => {
     if (!window.desktopAPI) return
@@ -43,7 +46,7 @@ export default function Settings() {
             case 'not-available': return { ...prev, status: 'not-available', info: evt.info, error: null }
             case 'progress': return { ...prev, status: 'downloading', progress: Math.round(evt.percent || 0) }
             case 'downloaded': return { ...prev, status: 'downloaded', info: evt.info, progress: 100 }
-            case 'error': return { ...prev, status: 'error', error: evt.message || 'Update failed' }
+            case 'error': return { ...prev, status: 'error', error: evt.message || 'Update failed', rawError: evt.raw || '', errorPhase: evt.phase || '' }
             default: return prev
           }
         })
@@ -109,6 +112,29 @@ export default function Settings() {
     }
   }
 
+  async function changeUninstallPassword() {
+    if (!window.desktopAPI?.changeUninstallPassword) return
+    if (pwdForm.next !== pwdForm.confirm) {
+      setPwdMsg('New passwords do not match.')
+      return
+    }
+    setPwdBusy(true)
+    setPwdMsg('')
+    try {
+      const r = await window.desktopAPI.changeUninstallPassword(pwdForm.current, pwdForm.next)
+      if (r?.error) {
+        setPwdMsg(r.error)
+      } else {
+        setPwdMsg('Uninstall password changed successfully.')
+        setPwdForm({ current: '', next: '', confirm: '' })
+      }
+    } catch (e) {
+      setPwdMsg(String(e?.message || e))
+    } finally {
+      setPwdBusy(false)
+    }
+  }
+
   async function toggleAutoStart() {
     if (!window.desktopAPI?.setAutoStart) return
     const next = !autoStart
@@ -169,6 +195,63 @@ export default function Settings() {
             </div>
             <input type="checkbox" checked={autoStart} onChange={toggleAutoStart} className="h-4 w-4" />
           </label>
+        </div>
+      </section>
+
+      {/* Security */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-950">
+            <Shield size={20} />
+          </div>
+          <div className="flex-1">
+            <h2 className="text-lg font-semibold">Uninstall Protection</h2>
+            <p className="text-sm text-slate-500">Control the password required to uninstall this application.</p>
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Current Password</label>
+                <input
+                  type="password"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950"
+                  value={pwdForm.current}
+                  onChange={(e) => setPwdForm((s) => ({ ...s, current: e.target.value }))}
+                  placeholder="Enter current uninstall password"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">New Password</label>
+                <input
+                  type="password"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950"
+                  value={pwdForm.next}
+                  onChange={(e) => setPwdForm((s) => ({ ...s, next: e.target.value }))}
+                  placeholder="Min 4 characters"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Confirm New Password</label>
+                <input
+                  type="password"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950"
+                  value={pwdForm.confirm}
+                  onChange={(e) => setPwdForm((s) => ({ ...s, confirm: e.target.value }))}
+                  placeholder="Retype new password"
+                />
+              </div>
+              {pwdMsg && (
+                <p className={`text-xs ${pwdMsg.includes('success') ? 'text-emerald-600' : 'text-rose-600'}`}>{pwdMsg}</p>
+              )}
+              <button
+                type="button"
+                disabled={pwdBusy || !pwdForm.current || !pwdForm.next || !pwdForm.confirm}
+                onClick={changeUninstallPassword}
+                className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-700 disabled:opacity-50"
+              >
+                <Lock size={16} />
+                {pwdBusy ? 'Updating...' : 'Change Uninstall Password'}
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -245,9 +328,9 @@ function translateUpdateError(err) {
   if (raw.includes('sha') || raw.includes('checksum') || raw.includes('hash')) {
     return 'Update file integrity check failed. The downloaded file may be corrupted. Please try again or use Manual Update.'
   }
-  if (raw.includes('err_')) {
-    return 'GitHub connection failed. Please check your internet and try again, or use Manual Update.'
-  }
+  // NOTE: removed the overly broad `raw.includes('err_')` fallback that was
+  // hiding real installation errors. Now the actual error is returned so
+  // the user (and logs) can see the real root cause.
   return String(err)
 }
 
@@ -291,6 +374,15 @@ function UpdateStatus({ state, manualPath, onClearManual }) {
       {state.status === 'error' && (
         <div className="space-y-2">
           <p className="text-red-600">{friendlyError}</p>
+          {state.rawError && (
+            <details className="mt-1">
+              <summary className="cursor-pointer text-[11px] text-slate-500">View technical details</summary>
+              <div className="mt-1 rounded bg-white p-2 font-mono text-[11px] text-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                <p><strong>Phase:</strong> {state.errorPhase || 'unknown'}</p>
+                <p><strong>Raw:</strong> {state.rawError}</p>
+              </div>
+            </details>
+          )}
           {isNetworkError && (
             <div className="flex flex-wrap gap-2">
               <button onClick={onClearManual} className="inline-flex items-center gap-1.5 rounded-md bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">

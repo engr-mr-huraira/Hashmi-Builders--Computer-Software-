@@ -85,10 +85,11 @@ export default function UpdateNotification() {
         // pop up a red 'Update Failed' card unprompted.
         setUpdate((current) => {
           if (!current.visible) return current
+          const rawDetail = payload.raw && payload.raw !== payload.message ? ` (${payload.phase || 'unknown'}: ${payload.raw})` : ''
           return {
             ...current,
             status: 'error',
-            message: payload.message || 'Update failed. Please try again later.',
+            message: `${payload.message || 'Update failed. Please try again later.'}${rawDetail}`,
           }
         })
       }

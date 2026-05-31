@@ -22,27 +22,32 @@ cd /d "%~dp0"
 title Hashmi Real Estate Builders - Installer Build
 
 echo.
-echo === [0/4] Cleaning old dist folder ===
+echo === [0/5] Cleaning old dist folder ===
 if exist dist rmdir /s /q dist
 echo Cleaned.
 
 echo.
-echo === [1/4] Building frontend (React) ===
+echo === [1/5] Building frontend (React) ===
 call npm --prefix frontend run build
 if %errorlevel% NEQ 0 goto :fail
 
 echo.
-echo === [2/4] Building backend (TypeScript) ===
+echo === [2/5] Building backend (TypeScript) ===
 call npm --prefix backend run build
 if %errorlevel% NEQ 0 goto :fail
 
 echo.
-echo === [3/4] Validating version bump ===
+echo === [3/5] Generating uninstall password hash ===
+call node scripts/generate-uninstall-hash.js
+if %errorlevel% NEQ 0 goto :fail
+
+echo.
+echo === [4/5] Validating version bump ===
 call node scripts/validate-version.js
 if %errorlevel% NEQ 0 goto :fail
 
 echo.
-echo === [4/4] Packaging NSIS installer ===
+echo === [5/5] Packaging NSIS installer ===
 call npx electron-builder --win nsis --x64
 if %errorlevel% NEQ 0 goto :fail
 

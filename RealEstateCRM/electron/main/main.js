@@ -56,6 +56,83 @@ function logInfo(msg)  { logToFile(`INFO  ${msg}`) }
 function logWarn(msg)  { logToFile(`WARN  ${msg}`) }
 function logError(msg) { logToFile(`ERROR ${msg}`) }
 
+// Security logging -------------------------------------------------------
+const SECURITY_LOG_FILE = path.join(APP_DATA_DIR, 'security.log')
+function securityLog(event, details = {}) {
+  try {
+    const entry = `[${new Date().toISOString()}] SEC ${event} | ${JSON.stringify(details)}\n`
+    fs.appendFileSync(SECURITY_LOG_FILE, entry)
+  } catch (_) {}
+}
+
+// Uninstall password helpers -----------------------------------------------
+const PROGRAM_DATA_DIR = process.env.ALLUSERSPROFILE || path.join(process.env.ProgramData || 'C:\\ProgramData')
+const SHARED_CONFIG_DIR = path.join(PROGRAM_DATA_DIR, 'HashmiBuilders')
+const UNINSTALL_HASH_FILE = path.join(SHARED_CONFIG_DIR, 'uninstall-hash.json')
+
+function getBundledUninstallHash() {
+  try {
+    const bundled = path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'resources', 'uninstall-hash.json')
+    if (fs.existsSync(bundled)) return JSON.parse(fs.readFileSync(bundled, 'utf8'))
+  } catch (_) {}
+  return null
+}
+
+function getActiveUninstallHash() {
+  try {
+    if (fs.existsSync(UNINSTALL_HASH_FILE)) return JSON.parse(fs.readFileSync(UNINSTALL_HASH_FILE, 'utf8'))
+  } catch (_) {}
+  return getBundledUninstallHash()
+}
+
+function verifyUninstallPassword(inputPassword) {
+  const record = getActiveUninstallHash()
+  if (!record || !record.hash) return false
+  return bcrypt.compareSync(inputPassword, record.hash)
+}
+
+// Tamper detection ---------------------------------------------------------
+function verifyInstallation() {
+  if (!app.isPackaged) return
+  const checks = [
+    { path: BACKEND_ENTRY, name: 'backend server' },
+    { path: FRONTEND_INDEX, name: 'frontend index' },
+    { path: path.join(__dirname, '..', 'preload', 'preload.js'), name: 'preload script' },
+  ]
+  let tampered = false
+  for (const check of checks) {
+    if (!fs.existsSync(check.path)) {
+      tampered = true
+      securityLog('TAMPER_MISSING_FILE', { file: check.name, path: check.path })
+      logError(`Tamper: missing ${check.name} at ${check.path}`)
+    }
+  }
+  if (tampered) {
+    try {
+      dialog.showErrorBox(
+        'Application Integrity Check Failed',
+        'One or more required application files are missing. This may indicate tampering or an incomplete installation.\n\nPlease reinstall the application.'
+      )
+    } catch (_) {}
+  }
+}
+
+// Permission hardening (Windows ACLs) --------------------------------------
+function hardenPermissions() {
+  if (!app.isPackaged || process.platform !== 'win32') return
+  try {
+    const { execSync } = require('child_process')
+    const installDir = path.dirname(process.execPath)
+    // Remove inherited permissions and set strict ACLs
+    execSync(`icacls "${installDir}" /inheritance:r`, { windowsHide: true, timeout: 10000 })
+    execSync(`icacls "${installDir}" /grant:r "Users:(RX)" /grant "Administrators:(F)" /grant "SYSTEM:(F)"`, { windowsHide: true, timeout: 10000 })
+    logInfo('Permissions hardened on install directory')
+    securityLog('PERMISSIONS_HARDENED', { dir: installDir })
+  } catch (e) {
+    logWarn(`Permission hardening skipped: ${e.message}`)
+  }
+}
+
 process.on('uncaughtException', (err) => { logToFile(`UNCAUGHT ${err.stack || err.message}`, CRASH_FILE); logError(`uncaughtException: ${err.message}`) })
 process.on('unhandledRejection', (err) => { logToFile(`UNHANDLED ${(err && err.stack) || err}`, CRASH_FILE); logError(`unhandledRejection: ${err}`) })
 
@@ -377,6 +454,7 @@ function broadcastUpdate(payload) {
 }
 
 let pendingUpdateInfo = null
+let updatePhase = 'idle' // idle | checking | available | downloading | downloaded | installing | error
 
 function maybeAnnouncePostUpdate() {
   try {
@@ -411,58 +489,98 @@ function setupAutoUpdater() {
 
   // GitHub provider is auto-configured from package.json build.publish.
   // Do NOT call setFeedURL() for GitHub provider — electron-updater
-  // resolves the feed automatically from the bundled build metadata.
+  // resolves the feed automatically from the bundled app metadata.
   logInfo(`Auto-updater initialized (GitHub provider). Current version: ${app.getVersion()}`)
 
-  autoUpdater.on('checking-for-update',  ()    => broadcastUpdate({ type: 'checking' }))
-  autoUpdater.on('update-available',     (info)=> broadcastUpdate({ type: 'available', info }))
-  autoUpdater.on('update-not-available', (info)=> broadcastUpdate({ type: 'not-available', info }))
-  autoUpdater.on('download-progress',    (p)   => broadcastUpdate({ type: 'progress', percent: Math.round(p.percent || 0), transferred: p.transferred, total: p.total }))
-  autoUpdater.on('update-downloaded',    (info)=> {
+  autoUpdater.on('checking-for-update', () => {
+    updatePhase = 'checking'
+    logInfo('[updater] Phase: checking-for-update')
+    broadcastUpdate({ type: 'checking' })
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    updatePhase = 'available'
+    logInfo(`[updater] Phase: update-available | version=${info?.version || '?'} | date=${info?.releaseDate || '?'}`)
+    broadcastUpdate({ type: 'available', info })
+  })
+
+  autoUpdater.on('update-not-available', (info) => {
+    updatePhase = 'idle'
+    logInfo(`[updater] Phase: update-not-available | current=${app.getVersion()}`)
+    broadcastUpdate({ type: 'not-available', info })
+  })
+
+  autoUpdater.on('download-progress', (p) => {
+    updatePhase = 'downloading'
+    const percent = Math.round(p.percent || 0)
+    if (percent % 10 === 0) {
+      logInfo(`[updater] Phase: download-progress | ${percent}% | transferred=${p.transferred} / total=${p.total}`)
+    }
+    broadcastUpdate({ type: 'progress', percent, transferred: p.transferred, total: p.total })
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    updatePhase = 'downloaded'
     pendingUpdateInfo = info
+    // Log downloaded file details for debugging installation failures
+    try {
+      const dlCache = autoUpdater.downloadedUpdateHelper && autoUpdater.downloadedUpdateHelper.cacheDir
+      logInfo(`[updater] Phase: update-downloaded | version=${info?.version || '?'} | cacheDir=${dlCache || 'unknown'}`)
+    } catch (_) {
+      logInfo(`[updater] Phase: update-downloaded | version=${info?.version || '?'}`)
+    }
     broadcastUpdate({ type: 'downloaded', info })
   })
 
   autoUpdater.on('error', (err) => {
-    // Build a comprehensive error string from all possible properties
+    const phaseAtError = updatePhase
+    updatePhase = 'error'
+
+    // Build a comprehensive diagnostic payload
+    const diagnostic = {
+      phase: phaseAtError,
+      message: err?.message || '',
+      stack: err?.stack || '',
+      code: err?.code || '',
+      statusCode: err?.statusCode || '',
+      cause: err?.cause?.message || '',
+    }
     const fullError = [
-      err && err.message,
-      err && err.stack,
-      err && err.cause && err.cause.message,
-      typeof err === 'string' ? err : null,
-      err && err.code,
-      err && err.statusCode,
+      diagnostic.message,
+      diagnostic.stack,
+      diagnostic.cause,
+      diagnostic.code,
+      diagnostic.statusCode,
     ].filter(Boolean).join(' ')
 
-    let message = (err && err.message) || 'Update check failed'
+    // Translate ONLY for known network errors. For everything else, preserve
+    // the original error so we can see the real root cause (installer spawn,
+    // checksum, permissions, etc.).
+    let userMessage = diagnostic.message || 'Update failed'
     const raw = fullError.toLowerCase()
 
     if (raw.includes('err_name_not_resolved') || raw.includes('enotfound') || raw.includes('getaddrinfo')) {
-      message = 'Cannot reach GitHub. Please check your internet connection or try Manual Update.'
+      userMessage = 'Cannot reach GitHub. Please check your internet connection or try Manual Update.'
     } else if (raw.includes('err_internet_disconnected') || raw.includes('econnrefused') || raw.includes('etimedout') || raw.includes('ehostunreach')) {
-      message = 'No internet connection. The application works fully offline. Connect to the internet to check for updates.'
+      userMessage = 'No internet connection. The application works fully offline. Connect to the internet to check for updates.'
     } else if (raw.includes('err_cert')) {
-      message = 'SSL certificate error when connecting to GitHub. Please contact your administrator.'
+      userMessage = 'SSL certificate error when connecting to GitHub. Please contact your administrator.'
     } else if (raw.includes('404') || raw.includes('not found')) {
-      // GitHub 404 on latest.yml means no matching release was found for this channel
-      message = 'No update release found on GitHub. Make sure the release tag matches the version (e.g., v1.0.1).'
+      userMessage = 'No update release found on GitHub. Make sure the release tag matches the version (e.g., v1.0.1).'
     } else if (raw.includes('403') || raw.includes('rate limit')) {
-      message = 'GitHub API rate limit exceeded. Please try again later or use Manual Update.'
+      userMessage = 'GitHub API rate limit exceeded. Please try again later or use Manual Update.'
     } else if (raw.includes('401') || raw.includes('unauthorized')) {
-      message = 'Authentication failed with GitHub. The repository may be private or your token may be invalid.'
+      userMessage = 'Authentication failed with GitHub. The repository may be private or your token may be invalid.'
     } else if (raw.includes('check update first')) {
-      message = 'Please click "Check for Updates" first before downloading.'
-    } else if (raw.includes('err_')) {
-      // Fallback for any other Chromium network errors
-      message = 'GitHub connection failed. Please check your internet and try again, or use Manual Update.'
-    } else if (raw.includes('cannot') && raw.includes('download')) {
-      message = 'Download failed. The release file may be missing or corrupted on GitHub. Please contact support.'
+      userMessage = 'Please click "Check for Updates" first before downloading.'
     } else if (raw.includes('sha') || raw.includes('checksum') || raw.includes('hash')) {
-      message = 'Update file integrity check failed. The downloaded file may be corrupted. Please try again or use Manual Update.'
+      userMessage = 'Update file integrity check failed. The downloaded file may be corrupted. Please try again or use Manual Update.'
     }
+    // NOTE: removed the overly broad `raw.includes('err_')` fallback that was
+    // hiding real installation errors behind "GitHub connection failed".
 
-    logError(`Updater error: ${message} | raw: ${fullError}`)
-    broadcastUpdate({ type: 'error', message })
+    logError(`[updater] ERROR in phase "${phaseAtError}" | userMessage="${userMessage}" | diagnostic=${JSON.stringify(diagnostic)}`)
+    broadcastUpdate({ type: 'error', message: userMessage, raw: diagnostic.message, phase: phaseAtError })
   })
 }
 
@@ -539,8 +657,6 @@ ipcMain.handle('updates:check', async () => {
       message = 'GitHub API rate limit exceeded. Please try again later or use Manual Update.'
     } else if (raw.includes('401') || raw.includes('unauthorized')) {
       message = 'Authentication failed with GitHub. The repository may be private or your token may be invalid.'
-    } else if (raw.includes('err_')) {
-      message = 'GitHub connection failed. Please check your internet and try again, or use Manual Update.'
     }
     return { error: message }
   }
@@ -553,32 +669,91 @@ ipcMain.handle('updates:check', async () => {
 ipcMain.handle('updates:download', async () => {
   try {
     if (!autoUpdater) return { error: 'Updater unavailable' }
+    logInfo('[updater] Starting downloadUpdate()')
+    updatePhase = 'downloading'
     await autoUpdater.downloadUpdate()
+    logInfo('[updater] downloadUpdate() completed successfully')
     return { ok: true }
   } catch (e) {
-    logError(`downloadUpdate failed: ${e && e.message}`)
+    const diag = { message: e?.message, code: e?.code, stack: e?.stack }
+    logError(`[updater] downloadUpdate failed: ${JSON.stringify(diag)}`)
     return { error: (e && e.message) || 'Download failed. Please try again or use Manual Update.' }
   }
 })
 
 // Quit the app and install the downloaded update.
-// This triggers the NSIS silent install flow.
-ipcMain.handle('updates:install', () => {
+// This triggers the NSIS install flow.
+ipcMain.handle('updates:install', async () => {
   try {
     if (!autoUpdater) return { error: 'Updater unavailable' }
     const targetVersion = (pendingUpdateInfo && pendingUpdateInfo.version) || null
+    if (!targetVersion) {
+      logWarn('[updater] install called but no pendingUpdateInfo')
+      return { error: 'No downloaded update available. Please download first.' }
+    }
+
+    // Verify the downloaded file exists before trying to install
+    let downloadedFilePath = null
+    try {
+      const dlCache = autoUpdater.downloadedUpdateHelper && autoUpdater.downloadedUpdateHelper.cacheDir
+      if (dlCache && fs.existsSync(dlCache)) {
+        const files = fs.readdirSync(dlCache)
+        logInfo(`[updater] Cache dir contents before install: ${JSON.stringify(files)}`)
+        const exeFile = files.find((f) => f.endsWith('.exe'))
+        if (exeFile) downloadedFilePath = path.join(dlCache, exeFile)
+      }
+    } catch (cacheErr) {
+      logWarn(`[updater] Could not inspect cache dir: ${cacheErr.message}`)
+    }
+    if (downloadedFilePath) {
+      logInfo(`[updater] Downloaded installer verified: ${downloadedFilePath}`)
+    } else {
+      logWarn('[updater] Could not verify downloaded installer file path')
+    }
+
     store.set('updateInProgress', {
       fromVersion: app.getVersion(),
       toVersion: targetVersion,
       at: new Date().toISOString(),
     })
-    logInfo(`Quit-and-install requested: ${app.getVersion()} -> ${targetVersion || '?'}`)
+    logInfo(`[updater] Quit-and-install requested: ${app.getVersion()} -> ${targetVersion}`)
+
+    // Close the main window cleanly before quitting to avoid race conditions
+    // where the renderer prevents close or the backend stays alive.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        mainWindow.removeAllListeners('close')
+        mainWindow.close()
+        logInfo('[updater] Main window closed in preparation for install')
+      } catch (winErr) {
+        logWarn(`[updater] Could not close mainWindow: ${winErr.message}`)
+      }
+    }
+
+    // Kill backend process so it doesn't block the installer
+    if (backendProcess) {
+      try {
+        backendProcess.kill()
+        logInfo('[updater] Backend process killed before install')
+      } catch (beErr) {
+        logWarn(`[updater] Could not kill backend: ${beErr.message}`)
+      }
+    }
+
     app.isQuiting = true
+    updatePhase = 'installing'
+
+    // Give the window/backend a brief moment to tear down before triggering quitAndInstall.
+    // This helps avoid "file in use" errors during NSIS replace on Windows.
+    await new Promise((resolve) => setTimeout(resolve, 500))
+
+    logInfo('[updater] Calling autoUpdater.quitAndInstall(false, true)')
     autoUpdater.quitAndInstall(false, true)
     return { ok: true }
   } catch (e) {
-    logError(`quitAndInstall failed: ${e.message}`)
-    return { error: e.message }
+    const diag = { message: e?.message, code: e?.code, stack: e?.stack }
+    logError(`[updater] quitAndInstall failed: ${JSON.stringify(diag)}`)
+    return { error: e.message || 'Installation failed. Please use Manual Update.' }
   }
 })
 
@@ -622,6 +797,57 @@ ipcMain.handle('updates:get-config', async () => {
   return { url: 'github', note: 'GitHub provider is configured in package.json build.publish' }
 })
 
+// --- Security IPC handlers ------------------------------------------------
+
+ipcMain.handle('security:change-uninstall-password', async (_, currentPassword, newPassword) => {
+  try {
+    if (!currentPassword || !newPassword || newPassword.length < 4) {
+      return { error: 'Password must be at least 4 characters.' }
+    }
+    if (!verifyUninstallPassword(currentPassword)) {
+      securityLog('PASSWORD_CHANGE_FAIL', { reason: 'incorrect_current' })
+      return { error: 'Current password is incorrect.' }
+    }
+    const hash = bcrypt.hashSync(newPassword, 10)
+    if (!fs.existsSync(SHARED_CONFIG_DIR)) {
+      fs.mkdirSync(SHARED_CONFIG_DIR, { recursive: true })
+    }
+    fs.writeFileSync(UNINSTALL_HASH_FILE, JSON.stringify({ hash, updatedAt: new Date().toISOString(), version: 1 }, null, 2), 'utf8')
+    securityLog('PASSWORD_CHANGE_SUCCESS', {})
+    return { ok: true }
+  } catch (e) {
+    securityLog('PASSWORD_CHANGE_ERROR', { message: e.message })
+    return { error: e.message }
+  }
+})
+
+ipcMain.handle('security:get-logs', async () => {
+  try {
+    if (!fs.existsSync(SECURITY_LOG_FILE)) return { logs: [] }
+    const raw = fs.readFileSync(SECURITY_LOG_FILE, 'utf8')
+    const lines = raw.split('\n').filter(Boolean).reverse().slice(0, 500)
+    return { logs: lines }
+  } catch (e) {
+    return { error: e.message }
+  }
+})
+
+ipcMain.handle('security:open-logs', () => {
+  try { shell.openPath(SECURITY_LOG_FILE) } catch (_) {}
+})
+
+// Uninstall password CLI verification --------------------------------------
+// This runs BEFORE app.requestSingleInstanceLock() so that a second
+// instance launched by the NSIS uninstaller can verify the password even
+// when the app is already running.
+const uninstallPwdIdx = process.argv.indexOf('--verify-uninstall-password')
+if (uninstallPwdIdx !== -1) {
+  const inputPassword = process.argv[uninstallPwdIdx + 1] || ''
+  const valid = verifyUninstallPassword(inputPassword)
+  securityLog('UNINSTALL_VERIFY', { success: valid, source: 'nsis_cli', pid: process.pid })
+  process.exit(valid ? 0 : 1)
+}
+
 // Lifecycle ----------------------------------------------------------------
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) { app.quit() } else {
@@ -629,6 +855,8 @@ if (!gotLock) { app.quit() } else {
 
   app.whenReady().then(async () => {
     logInfo(`App start v${app.getVersion()} (packaged=${app.isPackaged})`)
+    verifyInstallation()
+    hardenPermissions()
     setupAutoUpdater()
     createSplashWindow()
 
