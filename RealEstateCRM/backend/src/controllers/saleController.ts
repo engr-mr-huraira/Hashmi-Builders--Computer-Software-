@@ -4,7 +4,7 @@ import { AuthRequest } from '../middleware/auth';
 import { createRecord, deleteRecord, getRecord, listRecords, updateRecord } from './crudFactory';
 import { updateColonyAutoStatus } from './colonyController';
 
-const fields = ['plot_id', 'customer_id', 'sale_number', 'sale_date', 'booking_amount', 'total_price', 'discount_amount', 'payment_plan', 'installment_months', 'monthly_installment', 'down_payment', 'status', 'agreement_number', 'transfer_count', 'created_by'];
+const fields = ['plot_id', 'shop_id', 'colony_id', 'customer_id', 'sale_number', 'sale_date', 'booking_amount', 'total_price', 'discount_amount', 'payment_plan', 'installment_months', 'monthly_installment', 'down_payment', 'status', 'agreement_number', 'transfer_count', 'created_by'];
 
 export const getAllSales = async (req: AuthRequest, res: Response) => {
   try {
@@ -14,15 +14,16 @@ export const getAllSales = async (req: AuthRequest, res: Response) => {
     const search = String(req.query.search || '').trim();
 
     let query = `
-      SELECT s.*, c.full_name AS customer_name, p.plot_number
+      SELECT s.*, c.full_name AS customer_name, p.plot_number, sh.shop_number
       FROM sales s
       JOIN customers c ON c.id = s.customer_id
-      JOIN plots p ON p.id = s.plot_id
+      LEFT JOIN plots p ON p.id = s.plot_id
+      LEFT JOIN shops sh ON sh.id = s.shop_id
     `;
     const values: any[] = [];
 
     if (search) {
-      query += ` WHERE c.full_name ILIKE $1 OR s.sale_number ILIKE $1 OR p.plot_number ILIKE $1`;
+      query += ` WHERE c.full_name ILIKE $1 OR s.sale_number ILIKE $1 OR p.plot_number ILIKE $1 OR sh.shop_number ILIKE $1`;
       values.push(`%${search}%`);
     }
 
@@ -41,15 +42,18 @@ export const getAllSales = async (req: AuthRequest, res: Response) => {
 export const getSaleById = async (req: AuthRequest, res: Response) => {
   try {
     const result = await pool.query(
-      `SELECT s.*, 
+      `SELECT s.*,
               c.full_name AS customer_name,
               p.plot_number, p.plot_size,
-              col.name AS colony_name,
+              sh.shop_number, sh.size AS shop_size, sh.dimensions AS shop_dimensions,
+              COALESCE(col.name, col2.name) AS colony_name,
               COALESCE((SELECT SUM(amount)::numeric FROM payments WHERE sale_id = s.id), 0) AS total_paid
        FROM sales s
        JOIN customers c ON c.id = s.customer_id
-       JOIN plots p ON p.id = s.plot_id
-       JOIN colonies col ON col.id = p.colony_id
+       LEFT JOIN plots p ON p.id = s.plot_id
+       LEFT JOIN shops sh ON sh.id = s.shop_id
+       LEFT JOIN colonies col ON col.id = p.colony_id
+       LEFT JOIN colonies col2 ON col2.id = sh.colony_id
        WHERE s.id = $1`,
       [req.params.id]
     );
@@ -100,6 +104,18 @@ export const createSale = async (req: AuthRequest, res: Response) => {
       }
     } catch (e) {}
   }
+  if (!res.writableEnded && req.body?.shop_id) {
+    try {
+      await pool.query(
+        "UPDATE shops SET status = 'sold', updated_at = NOW() WHERE id = $1",
+        [req.body.shop_id]
+      );
+      const shop = await pool.query('SELECT colony_id FROM shops WHERE id = $1', [req.body.shop_id]);
+      if (shop.rows[0]?.colony_id) {
+        await updateColonyAutoStatus(shop.rows[0].colony_id);
+      }
+    } catch (e) {}
+  }
 };
 
 export const updateSale = updateRecord('sales', fields);
@@ -116,11 +132,16 @@ export const cancelSale = async (req: AuthRequest, res: Response) => {
   if (result.rows[0]?.plot_id) {
     await pool.query('UPDATE plots SET status = $1, current_owner_id = NULL, updated_at = NOW() WHERE id = $2', ['available', result.rows[0].plot_id]);
   }
+  if (result.rows[0]?.shop_id) {
+    await pool.query('UPDATE shops SET status = $1, updated_at = NOW() WHERE id = $2', ['available', result.rows[0].shop_id]);
+  }
   // Re-evaluate colony status: a cancelled sale may mean the colony is no longer fully sold.
-  if (result.rows[0]?.plot_id) {
-    const plot = await pool.query('SELECT colony_id FROM plots WHERE id = $1', [result.rows[0].plot_id]);
-    if (plot.rows[0]?.colony_id) {
-      try { await updateColonyAutoStatus(plot.rows[0].colony_id) } catch (_) {}
+  const reEvalId = result.rows[0]?.plot_id || result.rows[0]?.shop_id;
+  if (reEvalId) {
+    const entity = result.rows[0]?.plot_id ? 'plots' : 'shops';
+    const col = await pool.query(`SELECT colony_id FROM ${entity} WHERE id = $1`, [reEvalId]);
+    if (col.rows[0]?.colony_id) {
+      try { await updateColonyAutoStatus(col.rows[0].colony_id) } catch (_) {}
     }
   }
   res.json(result.rows[0]);

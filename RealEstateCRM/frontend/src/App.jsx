@@ -9,6 +9,7 @@ import { useAuthStore } from './store/authStore.js'
 const modules = [
   { path: 'colonies', title: 'Colony Management', endpoint: '/colonies', description: 'Manage colonies, blocks, sectors, maps, and project inventory.' },
   { path: 'plots', title: 'Plot Management', endpoint: '/plots', description: 'Track plot numbers, sizes, prices, tags, status, booking, and ownership.' },
+  { path: 'shops', title: 'Shop Management', endpoint: '/shops', description: 'Create shops on commercial plots, track shop numbers, sizes, dimensions, prices, and status.' },
   { path: 'customers', title: 'Customer Management', endpoint: '/customers', description: 'Maintain customer profiles, CNIC, contacts, documents, and transaction history.' },
   { path: 'sales', title: 'Sale Management', endpoint: '/sales', description: 'Create bookings, allotments, installment plans, transfers, and cancellations.' },
   { path: 'payments', title: 'Payment Management', endpoint: '/payments', description: 'Record installments, receipts, ledgers, partial, advance, and due payments.' },

@@ -14,13 +14,13 @@ export const getAccountById = getRecord('accounts');
 export const createAccount = createRecord('accounts', accountFields);
 
 export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
-  const income = await pool.query("SELECT COALESCE(SUM(amount), 0) total FROM financial_transactions WHERE transaction_type = 'income'");
+  const charity = await pool.query("SELECT COALESCE(SUM(amount), 0) total FROM financial_transactions WHERE transaction_type = 'charity'");
   const expense = await pool.query("SELECT COALESCE(SUM(amount), 0) total FROM financial_transactions WHERE transaction_type = 'expense'");
   const payments = await pool.query('SELECT COALESCE(SUM(amount), 0) total FROM payments');
   res.json({
-    income: Number(income.rows[0].total),
+    charity: Number(charity.rows[0].total),
     expense: Number(expense.rows[0].total),
     payments: Number(payments.rows[0].total),
-    profit: Number(income.rows[0].total) + Number(payments.rows[0].total) - Number(expense.rows[0].total),
+    profit: Number(payments.rows[0].total) - Number(expense.rows[0].total) - Number(charity.rows[0].total),
   });
 };

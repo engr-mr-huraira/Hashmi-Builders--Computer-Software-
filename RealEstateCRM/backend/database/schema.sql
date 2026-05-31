@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS colonies (
     stamp_paper_file TEXT,               -- e Stam Paper file (Base64)
     payment_plan_client VARCHAR(50),     -- payment client ko kesy deni ha (Quarterly, Yearly, 6 Months)
     clearance_duration VARCHAR(100),     -- Time to clear payments to vendor/client
+    charity_percentage DECIMAL(5, 2) DEFAULT 0, -- Percentage of profit to give as charity
     status VARCHAR(20) DEFAULT 'active',
     created_by UUID REFERENCES users(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

@@ -6,14 +6,17 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
   const totalPlots = await pool.query('SELECT COUNT(*) FROM plots');
   const soldPlots = await pool.query("SELECT COUNT(*) FROM plots WHERE status = 'sold'");
   const availablePlots = await pool.query("SELECT COUNT(*) FROM plots WHERE status = 'available'");
+  const totalShops = await pool.query('SELECT COUNT(*) FROM shops');
+  const soldShops = await pool.query("SELECT COUNT(*) FROM shops WHERE status = 'sold'");
+  const availableShops = await pool.query("SELECT COUNT(*) FROM shops WHERE status = 'available'");
   const pendingPayments = await pool.query("SELECT COALESCE(SUM(amount - paid_amount), 0) total FROM installments WHERE status = 'pending'");
   const refunds = await pool.query('SELECT COUNT(*) count, COALESCE(SUM(refund_amount), 0) amount FROM refunds');
   const revenue = await pool.query("SELECT COALESCE(SUM(amount), 0) total FROM payments WHERE payment_date >= date_trunc('month', NOW())");
 
   res.json({
-    totalPlots: Number(totalPlots.rows[0].count),
-    soldPlots: Number(soldPlots.rows[0].count),
-    availablePlots: Number(availablePlots.rows[0].count),
+    totalPlots: Number(totalPlots.rows[0].count) + Number(totalShops.rows[0].count),
+    soldPlots: Number(soldPlots.rows[0].count) + Number(soldShops.rows[0].count),
+    availablePlots: Number(availablePlots.rows[0].count) + Number(availableShops.rows[0].count),
     pendingPayments: Number(pendingPayments.rows[0].total),
     refundCount: Number(refunds.rows[0].count),
     refundAmount: Number(refunds.rows[0].amount),
@@ -41,8 +44,13 @@ export const getRevenueChart = async (req: AuthRequest, res: Response) => {
 };
 
 export const getPlotStatus = async (req: AuthRequest, res: Response) => {
-  const result = await pool.query('SELECT status, COUNT(*) count FROM plots GROUP BY status');
-  res.json(result.rows);
+  const plotResult = await pool.query('SELECT status, COUNT(*)::int AS count FROM plots GROUP BY status');
+  const shopResult = await pool.query('SELECT status, COUNT(*)::int AS count FROM shops GROUP BY status');
+  const statusMap: Record<string, number> = {};
+  for (const row of [...plotResult.rows, ...shopResult.rows]) {
+    statusMap[row.status] = (statusMap[row.status] || 0) + Number(row.count);
+  }
+  res.json(Object.entries(statusMap).map(([status, count]) => ({ status, count: Number(count) })));
 };
 
 // Per-colony summary used by the redesigned executive dashboard.
@@ -50,8 +58,13 @@ export const getPlotStatus = async (req: AuthRequest, res: Response) => {
 export const getColonyStats = async (req: AuthRequest, res: Response) => {
   const colonyId = (req.query.colonyId as string) || '';
   const isAll = !colonyId || colonyId === 'all';
-  const colonyFilter = isAll ? '' : 'WHERE p.colony_id = $1';
   const params: any[] = isAll ? [] : [colonyId];
+
+  const plotColony = isAll ? '' : 'WHERE colony_id = $1';
+  const shopColony = isAll ? '' : 'WHERE colony_id = $1';
+  const saleJoin = isAll ? '' : 'LEFT JOIN plots p ON p.id = s.plot_id LEFT JOIN shops sh ON sh.id = s.shop_id';
+  const saleWhere = isAll ? '' : 'WHERE (p.colony_id = $1 OR sh.colony_id = $1 OR s.colony_id = $1)';
+  const saleAnd = isAll ? 'WHERE' : 'AND';
 
   // Plots breakdown
   const plotsBreakdown = await pool.query(
@@ -61,19 +74,32 @@ export const getColonyStats = async (req: AuthRequest, res: Response) => {
        COUNT(*) FILTER (WHERE status = 'available')::int AS available,
        COUNT(*) FILTER (WHERE status NOT IN ('sold', 'available'))::int AS other,
        COALESCE(SUM(total_price), 0)::numeric AS inventory_value
-     FROM plots p
-     ${colonyFilter}`,
+     FROM plots
+     ${plotColony}`,
     params,
   );
 
-  // Receivable = pending installment balance for sales whose plot is in this colony.
+  // Shops breakdown
+  const shopsBreakdown = await pool.query(
+    `SELECT
+       COUNT(*)::int AS total,
+       COUNT(*) FILTER (WHERE status = 'sold')::int AS sold,
+       COUNT(*) FILTER (WHERE status = 'available')::int AS available,
+       COUNT(*) FILTER (WHERE status NOT IN ('sold', 'available'))::int AS other,
+       COALESCE(SUM(price), 0)::numeric AS inventory_value
+     FROM shops
+     ${shopColony}`,
+    params,
+  );
+
+  // Receivable = pending installment balance for sales in this colony.
   const receivable = await pool.query(
     `SELECT COALESCE(SUM(GREATEST(i.amount - COALESCE(i.paid_amount, 0), 0)), 0)::numeric AS total
      FROM installments i
      JOIN sales s ON s.id = i.sale_id
-     JOIN plots p ON p.id = s.plot_id
-     ${colonyFilter}
-     ${colonyFilter ? 'AND' : 'WHERE'} i.status <> 'paid'`,
+     ${saleJoin}
+     ${saleWhere}
+     ${saleAnd} i.status <> 'paid'`,
     params,
   );
 
@@ -82,20 +108,20 @@ export const getColonyStats = async (req: AuthRequest, res: Response) => {
     `SELECT COALESCE(SUM(r.refund_amount - COALESCE(r.deduction_amount, 0)), 0)::numeric AS total
      FROM refunds r
      JOIN sales s ON s.id = r.sale_id
-     JOIN plots p ON p.id = s.plot_id
-     ${colonyFilter}
-     ${colonyFilter ? 'AND' : 'WHERE'} r.approval_status IN ('pending', 'approved')
+     ${saleJoin}
+     ${saleWhere}
+     ${saleAnd} r.approval_status IN ('pending', 'approved')
        AND r.refund_date IS NULL`,
     params,
   );
 
-  // Cash collected = sum of payments received against sales of plots in this colony.
+  // Cash collected = sum of payments received against sales in this colony.
   const collected = await pool.query(
     `SELECT COALESCE(SUM(pay.amount), 0)::numeric AS total
      FROM payments pay
      JOIN sales s ON s.id = pay.sale_id
-     JOIN plots p ON p.id = s.plot_id
-     ${colonyFilter}`,
+     ${saleJoin}
+     ${saleWhere}`,
     params,
   );
 
@@ -104,9 +130,9 @@ export const getColonyStats = async (req: AuthRequest, res: Response) => {
     `SELECT COALESCE(SUM(r.refund_amount - COALESCE(r.deduction_amount, 0)), 0)::numeric AS total
      FROM refunds r
      JOIN sales s ON s.id = r.sale_id
-     JOIN plots p ON p.id = s.plot_id
-     ${colonyFilter}
-     ${colonyFilter ? 'AND' : 'WHERE'} r.refund_date IS NOT NULL`,
+     ${saleJoin}
+     ${saleWhere}
+     ${saleAnd} r.refund_date IS NOT NULL`,
     params,
   );
 
@@ -114,16 +140,16 @@ export const getColonyStats = async (req: AuthRequest, res: Response) => {
   const salesCount = await pool.query(
     `SELECT COUNT(*)::int AS total
      FROM sales s
-     JOIN plots p ON p.id = s.plot_id
-     ${colonyFilter}`,
+     ${saleJoin}
+     ${saleWhere}`,
     params,
   );
 
   const customerCount = await pool.query(
     `SELECT COUNT(DISTINCT s.customer_id)::int AS total
      FROM sales s
-     JOIN plots p ON p.id = s.plot_id
-     ${colonyFilter}`,
+     ${saleJoin}
+     ${saleWhere}`,
     params,
   );
 
@@ -133,24 +159,30 @@ export const getColonyStats = async (req: AuthRequest, res: Response) => {
             COALESCE(SUM(pay.amount), 0)::numeric AS revenue
      FROM payments pay
      JOIN sales s ON s.id = pay.sale_id
-     JOIN plots p ON p.id = s.plot_id
-     ${colonyFilter}
-     ${colonyFilter ? 'AND' : 'WHERE'} pay.payment_date >= (NOW() - INTERVAL '6 months')
+     ${saleJoin}
+     ${saleWhere}
+     ${saleAnd} pay.payment_date >= (NOW() - INTERVAL '6 months')
      GROUP BY date_trunc('month', pay.payment_date)
      ORDER BY date_trunc('month', pay.payment_date) ASC`,
     params,
   );
 
-  // Plot status pie data.
+  // Plot + Shop status pie data.
   const statusBreakdown = await pool.query(
     `SELECT status, COUNT(*)::int AS count
-     FROM plots p
-     ${colonyFilter}
+     FROM plots
+     ${plotColony}
+     GROUP BY status
+     UNION ALL
+     SELECT status, COUNT(*)::int AS count
+     FROM shops
+     ${shopColony}
      GROUP BY status`,
     params,
   );
 
   const plots = plotsBreakdown.rows[0];
+  const shops = shopsBreakdown.rows[0];
   const cashIn = Number(collected.rows[0].total);
   const refundsOut = Number(refundsPaid.rows[0].total);
   const profit = cashIn - refundsOut;
@@ -190,38 +222,84 @@ export const getColonyStats = async (req: AuthRequest, res: Response) => {
     }
   }
 
-  // Sold area in marlas
+  // Sold area in marlas (plots + shops)
   const soldAreaRes = await pool.query(
     `SELECT COALESCE(SUM(plot_size), 0)::numeric AS total_sold_area 
-     FROM plots p
-     ${colonyFilter ? "WHERE p.colony_id = $1 AND p.status = 'sold'" : "WHERE p.status = 'sold'"}`,
-    params
+     FROM plots
+     ${isAll ? "WHERE status = 'sold'" : "WHERE colony_id = $1 AND status = 'sold'"}
+     UNION ALL
+     SELECT COALESCE(SUM(size), 0)::numeric AS total_sold_area 
+     FROM shops
+     ${isAll ? "WHERE status = 'sold'" : "WHERE colony_id = $1 AND status = 'sold'"}`,
+    isAll ? [] : [colonyId]
   );
-  const totalSoldArea = Number(soldAreaRes.rows[0]?.total_sold_area || 0);
+  const totalSoldArea = Number(soldAreaRes.rows[0]?.total_sold_area || 0) + Number(soldAreaRes.rows[1]?.total_sold_area || 0);
 
-  // Remaining plots grouped by size
-  const remainingPlotsBySizeRes = await pool.query(
+  // Remaining plots + shops grouped by size
+  const remainingBySizeRes = await pool.query(
     `SELECT COALESCE(plot_size, 0)::numeric AS size, COUNT(*)::int AS count 
-     FROM plots p
-     ${colonyFilter ? "WHERE p.colony_id = $1 AND p.status <> 'sold'" : "WHERE p.status <> 'sold'"}
+     FROM plots
+     ${isAll ? "WHERE status <> 'sold'" : "WHERE colony_id = $1 AND status <> 'sold'"}
      GROUP BY plot_size
-     ORDER BY plot_size ASC`,
-    params
+     UNION ALL
+     SELECT COALESCE(size, 0)::numeric AS size, COUNT(*)::int AS count 
+     FROM shops
+     ${isAll ? "WHERE status <> 'sold'" : "WHERE colony_id = $1 AND status <> 'sold'"}
+     GROUP BY size
+     ORDER BY size ASC`,
+    isAll ? [] : [colonyId]
   );
-  const remainingPlotsBySize = remainingPlotsBySizeRes.rows.map(row => ({
-    size: Number(row.size),
-    count: Number(row.count)
-  }));
+  const sizeMap: Record<number, number> = {};
+  for (const row of remainingBySizeRes.rows) {
+    const s = Number(row.size);
+    sizeMap[s] = (sizeMap[s] || 0) + Number(row.count);
+  }
+  const remainingPlotsBySize = Object.entries(sizeMap)
+    .map(([size, count]) => ({ size: Number(size), count }))
+    .sort((a, b) => a.size - b.size);
+
+  // Charity calculations
+  let charityPercentage = 0;
+  if (!isAll) {
+    const cpRes = await pool.query(
+      'SELECT COALESCE(charity_percentage, 0)::numeric AS pct FROM colonies WHERE id = $1',
+      [colonyId]
+    );
+    charityPercentage = Number(cpRes.rows[0]?.pct || 0);
+  } else {
+    const cpRes = await pool.query(
+      'SELECT COALESCE(AVG(charity_percentage), 0)::numeric AS pct FROM colonies'
+    );
+    charityPercentage = Number(cpRes.rows[0]?.pct || 0);
+  }
+  const charityDue = Math.round((profit * charityPercentage) / 100);
+
+  // Charity paid from financial transactions
+  const charityPaidRes = await pool.query(
+    `SELECT COALESCE(SUM(amount), 0)::numeric AS total
+     FROM financial_transactions ft
+     WHERE ft.transaction_type = 'charity'
+       AND (${isAll ? '1=1' : 'ft.colony_id = $1'})`,
+    isAll ? [] : [colonyId]
+  );
+  const charityPaid = Number(charityPaidRes.rows[0]?.total || 0);
+  const charityRemaining = Math.max(0, charityDue - charityPaid);
+
+  // Aggregate plot + shop statuses for the pie chart
+  const statusMap: Record<string, number> = {};
+  for (const row of statusBreakdown.rows) {
+    statusMap[row.status] = (statusMap[row.status] || 0) + Number(row.count);
+  }
 
   res.json({
     colonyId: isAll ? 'all' : colonyId,
     plots: {
-      total: Number(plots.total),
-      sold: Number(plots.sold),
-      available: Number(plots.available),
-      other: Number(plots.other),
-      remaining: Number(plots.available) + Number(plots.other),
-      inventoryValue: Number(plots.inventory_value),
+      total: Number(plots.total) + Number(shops.total),
+      sold: Number(plots.sold) + Number(shops.sold),
+      available: Number(plots.available) + Number(shops.available),
+      other: Number(plots.other) + Number(shops.other),
+      remaining: Number(plots.available) + Number(shops.available) + Number(plots.other) + Number(shops.other),
+      inventoryValue: Number(plots.inventory_value) + Number(shops.inventory_value),
     },
     landDetails,
     totalSoldArea,
@@ -235,14 +313,15 @@ export const getColonyStats = async (req: AuthRequest, res: Response) => {
     cashCollected: cashIn,
     refundsPaid: refundsOut,
     profit,
+    charityPercentage,
+    charityDue,
+    charityPaid,
+    charityRemaining,
     revenueTrend: trend.rows.map((row) => ({
       month: row.month,
       revenue: Number(row.revenue),
     })),
-    plotStatus: statusBreakdown.rows.map((row) => ({
-      status: row.status,
-      count: Number(row.count),
-    })),
+    plotStatus: Object.entries(statusMap).map(([status, count]) => ({ status, count: Number(count) })),
   });
 };
 
@@ -251,11 +330,14 @@ export const getUpcomingInstallments = async (req: AuthRequest, res: Response) =
     const salesQuery = await pool.query(`
       SELECT s.id AS sale_id, s.sale_number, s.total_price,
              c.full_name AS customer_name,
-             p.plot_number, col.name AS colony_name
+             COALESCE(p.plot_number, sh.shop_number) AS plot_number,
+             COALESCE(col.name, col2.name) AS colony_name
       FROM sales s
       JOIN customers c ON s.customer_id = c.id
-      JOIN plots p ON s.plot_id = p.id
-      JOIN colonies col ON p.colony_id = col.id
+      LEFT JOIN plots p ON s.plot_id = p.id
+      LEFT JOIN shops sh ON s.shop_id = sh.id
+      LEFT JOIN colonies col ON p.colony_id = col.id
+      LEFT JOIN colonies col2 ON sh.colony_id = col2.id
       WHERE s.status = 'active'
     `);
 

@@ -16,6 +16,7 @@ import {
   Users,
   Wallet,
   Bell,
+  Heart,
   X,
 } from 'lucide-react'
 import api from '../api/client.js'
@@ -45,6 +46,10 @@ const initialStats = {
   cashCollected: 0,
   refundsPaid: 0,
   profit: 0,
+  charityPercentage: 0,
+  charityDue: 0,
+  charityPaid: 0,
+  charityRemaining: 0,
   revenueTrend: [],
   plotStatus: [],
 }
@@ -123,6 +128,10 @@ export default function Dashboard() {
       if (cancelled) return
       const list = Array.isArray(data) ? data : (data?.data || [])
       setColonies(list)
+      // Auto-select first colony when currently showing "All Colonies"
+      if (selectedColony === 'all' && list.length > 0) {
+        setSelectedColony(String(list[0].id))
+      }
     }).catch(() => {
       if (!cancelled) setColonies([])
     })
@@ -180,6 +189,10 @@ export default function Dashboard() {
       { metric: 'Cash Collected', value: formatCurrency(stats.cashCollected) },
       { metric: 'Refunds Disbursed', value: formatCurrency(stats.refundsPaid) },
       { metric: 'Total Profit', value: formatCurrency(stats.profit) },
+      { metric: 'Charity Percentage', value: `${stats.charityPercentage}%` },
+      { metric: 'Total Charity Due', value: formatCurrency(stats.charityDue) },
+      { metric: 'Charity Paid', value: formatCurrency(stats.charityPaid) },
+      { metric: 'Charity Remaining', value: formatCurrency(stats.charityRemaining) },
       { metric: 'Inventory Value', value: formatCurrency(stats.plots.inventoryValue) },
     ]
     printTable({
@@ -337,6 +350,33 @@ export default function Dashboard() {
             value={formatCurrency(stats.profit)}
             sub={profitPositive ? 'Net cash position (collected - refunds)' : 'Net loss for the selected colony'}
             delta={{ direction: profitPositive ? 'up' : 'down', text: profitPositive ? 'Positive' : 'Negative' }}
+          />
+        </div>
+      </div>
+
+      {/* Charity breakdown */}
+      <div>
+        <div className="mb-3 flex items-center gap-2 px-1">
+          <span className="inline-flex h-7 items-center rounded-full bg-rose-100/80 px-3 text-[11px] font-bold uppercase tracking-[0.18em] text-rose-700 ring-1 ring-rose-200/70 backdrop-blur">Charity</span>
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            {stats.charityPercentage > 0 ? `${stats.charityPercentage}% of profit · ${colonyLabel}` : 'No charity percentage set'}
+          </span>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <StatTile
+            icon={Heart}
+            accent="rose"
+            label="Total Charity Due"
+            value={formatCurrency(stats.charityDue)}
+            sub={`Based on ${stats.charityPercentage}% of colony profit`}
+          />
+          <StatTile
+            icon={Heart}
+            accent="emerald"
+            label="Charity Paid"
+            value={formatCurrency(stats.charityPaid)}
+            sub={`Remaining: ${formatCurrency(stats.charityRemaining)}`}
+            delta={{ direction: stats.charityRemaining > 0 ? 'down' : 'up', text: stats.charityRemaining > 0 ? `${formatCurrency(stats.charityRemaining)} pending` : 'Fully paid' }}
           />
         </div>
       </div>

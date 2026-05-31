@@ -24,8 +24,8 @@ export const createRefund = async (req: AuthRequest, res: Response) => {
       const { updateColonyAutoStatus } = await import('./colonyController');
       // Update sale status to cancelled
       await pool.query("UPDATE sales SET status = 'cancelled', updated_at = NOW() WHERE id = $1", [req.body.sale_id]);
-      // Get plot_id from sale
-      const sale = await pool.query("SELECT plot_id FROM sales WHERE id = $1", [req.body.sale_id]);
+      // Get plot_id and shop_id from sale
+      const sale = await pool.query("SELECT plot_id, shop_id FROM sales WHERE id = $1", [req.body.sale_id]);
       if (sale.rows[0]?.plot_id) {
         // Update plot status to cancelled and remove owner
         await pool.query("UPDATE plots SET status = 'cancelled', current_owner_id = NULL, updated_at = NOW() WHERE id = $1", [sale.rows[0].plot_id]);
@@ -33,6 +33,14 @@ export const createRefund = async (req: AuthRequest, res: Response) => {
         const plot = await pool.query('SELECT colony_id FROM plots WHERE id = $1', [sale.rows[0].plot_id]);
         if (plot.rows[0]?.colony_id) {
           await updateColonyAutoStatus(plot.rows[0].colony_id);
+        }
+      }
+      if (sale.rows[0]?.shop_id) {
+        // Restore shop to available
+        await pool.query("UPDATE shops SET status = 'available', updated_at = NOW() WHERE id = $1", [sale.rows[0].shop_id]);
+        const shop = await pool.query('SELECT colony_id FROM shops WHERE id = $1', [sale.rows[0].shop_id]);
+        if (shop.rows[0]?.colony_id) {
+          await updateColonyAutoStatus(shop.rows[0].colony_id);
         }
       }
     } catch (e) {}

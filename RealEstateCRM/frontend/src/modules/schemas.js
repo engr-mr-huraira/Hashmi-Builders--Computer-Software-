@@ -55,6 +55,7 @@ export const SCHEMAS = {
       { name: 'purchase_papers_file', label: 'Land Purchase Papers', type: 'file' },
       { name: 'stamp_paper_file', label: 'e Stam Paper', type: 'file' },
       { name: 'clearance_duration', label: 'Clearance Duration (Time to clear client)', type: 'text', placeholder: 'e.g. 1 Year, 6 Months' },
+      { name: 'charity_percentage', label: 'Charity Percentage (%)', type: 'number', step: '0.01', min: 0, max: 100, placeholder: 'e.g. 2.5 for 2.5%' },
       { name: 'status', label: 'Status', type: 'text', readOnly: true, placeholder: 'Auto-managed (active / completed)' },
     ],
     allow: { create: true, update: true, delete: true, view: true },
@@ -101,6 +102,38 @@ export const SCHEMAS = {
     allow: { create: true, update: true, delete: true, view: true },
   },
 
+  '/shops': {
+    label: 'Shop',
+    pluralLabel: 'Shops',
+    endpoint: '/shops',
+    columns: ['shop_number', 'size', 'dimensions', 'price', 'status', 'created_at'],
+    filters: { status: ['available', 'sold', 'cancelled'] },
+    fields: [
+      { name: 'colony_id', label: 'Colony', type: 'remote-select', endpoint: '/colonies', valueKey: 'id', labelKey: 'name', required: true,
+        defaultValue: (() => {
+          const val = localStorage.getItem('dashboard_selected_colony');
+          return val && val !== 'all' ? val : '';
+        })()
+      },
+      { name: 'plot_id', label: 'Commercial Plot', type: 'remote-select', endpoint: '/plots', valueKey: 'id', labelKey: 'plot_number', required: true,
+        formatLabel: (opt) => {
+          const parts = [opt.plot_number || `#${String(opt.id).slice(0, 8)}`];
+          if (opt.plot_size) parts.push(`${opt.plot_size} Marla`);
+          if (opt.dimensions) parts.push(opt.dimensions);
+          if (opt.is_corner) parts.push('Corner');
+          return parts.join(' · ');
+        },
+        filterOptions: (opt) => opt.is_commercial,
+      },
+      { name: 'shop_number', label: 'Shop Number', type: 'text', placeholder: 'Auto-generated' },
+      { name: 'size', label: 'Shop Size (Marla)', type: 'number', step: '0.01' },
+      { name: 'dimensions', label: 'Dimensions', type: 'text', placeholder: 'e.g. 10x20' },
+      { name: 'price', label: 'Shop Price', type: 'number', step: '0.01', required: true },
+      { name: 'status', label: 'Status', ...STATUS(['available', 'sold', 'cancelled']), defaultValue: 'available' },
+    ],
+    allow: { create: true, update: true, delete: true, view: true },
+  },
+
   '/customers': {
     label: 'Customer',
     pluralLabel: 'Customers',
@@ -140,7 +173,31 @@ export const SCHEMAS = {
     filters: { status: ['active', 'completed', 'cancelled', 'transferred'] },
     fields: [
       { name: 'sale_number', label: 'Sale #', type: 'text', placeholder: 'Auto-generated' },
-      { name: 'plot_id', label: 'Plot', type: 'remote-select', endpoint: '/plots', valueKey: 'id', labelKey: 'plot_number', required: true },
+      { name: 'colony_id', label: 'Colony', type: 'remote-select', endpoint: '/colonies', valueKey: 'id', labelKey: 'name', required: true,
+        defaultValue: (() => {
+          const val = localStorage.getItem('dashboard_selected_colony');
+          return val && val !== 'all' ? val : '';
+        })()
+      },
+      { name: 'plot_id', label: 'Plot', type: 'remote-select', endpoint: '/plots', valueKey: 'id', labelKey: 'plot_number', required: false,
+        formatLabel: (opt) => {
+          const parts = [opt.plot_number || `#${String(opt.id).slice(0, 8)}`];
+          if (opt.plot_size) parts.push(`${opt.plot_size} Marla`);
+          if (opt.dimensions) parts.push(opt.dimensions);
+          if (opt.is_corner) parts.push('Corner');
+          return parts.join(' · ');
+        },
+        filterOptions: (opt, values) => !opt.is_commercial && (!values?.colony_id || String(opt.colony_id) === String(values.colony_id)),
+      },
+      { name: 'shop_id', label: 'Shop', type: 'remote-select', endpoint: '/shops', valueKey: 'id', labelKey: 'shop_number', required: false,
+        formatLabel: (opt) => {
+          const parts = [opt.shop_number || `#${String(opt.id).slice(0, 8)}`];
+          if (opt.size) parts.push(`${opt.size} Marla`);
+          if (opt.dimensions) parts.push(opt.dimensions);
+          return parts.join(' · ');
+        },
+        filterOptions: (opt, values) => opt.status === 'available' && (!values?.colony_id || String(opt.colony_id) === String(values.colony_id)),
+      },
       { name: 'customer_id', label: 'Customer', type: 'remote-select', endpoint: '/customers', valueKey: 'id', labelKey: 'full_name', required: true },
       { name: 'sale_date', label: 'Sale Date', type: 'date', required: true, defaultToday: true },
       { name: 'total_price', label: 'Total Price', type: 'number', step: '0.01', required: true },
@@ -248,29 +305,32 @@ export const SCHEMAS = {
     pluralLabel: 'Financial Transactions',
     endpoint: '/financial/transactions',
     columns: ['transaction_type', 'category', 'amount', 'description', 'transaction_date'],
-    filters: { transaction_type: ['income', 'expense'] },
+    filters: { transaction_type: ['charity', 'expense'] },
     fields: [
-      { name: 'transaction_type', label: 'Type', ...STATUS(['income', 'expense']), required: true },
+      { name: 'transaction_type', label: 'Type', ...STATUS(['charity', 'expense']), required: true },
       { name: 'colony_id', label: 'Select Colony', type: 'remote-select', endpoint: '/colonies', valueKey: 'id', labelKey: 'name',
-        isVisible: (vals) => vals.transaction_type === 'expense',
+        isVisible: (vals) => vals.transaction_type === 'expense' || vals.transaction_type === 'charity',
+        required: true,
         defaultValue: (() => {
           const val = localStorage.getItem('dashboard_selected_colony');
           return val && val !== 'all' ? val : '';
         })()
       },
-      { name: 'category', label: 'Category', type: 'text', required: true,
-        isVisible: (vals) => vals.transaction_type !== 'expense',
+      { name: 'category', label: 'Charity Type', type: 'text', required: true,
+        isVisible: (vals) => vals.transaction_type === 'charity',
+        placeholder: 'e.g. Zakat, Sadqa, General Charity',
       },
       { name: 'category', label: 'Expense Type', type: 'select',
         options: [
           { value: 'Road Expenses', label: 'Road Expenses' },
           { value: 'Sewerage Expense', label: 'Sewerage Expense' },
+          { value: 'Shops Development Expense', label: 'Shops Development Expense' },
           { value: 'Others', label: 'Others' },
         ],
         required: true,
         isVisible: (vals) => vals.transaction_type === 'expense',
       },
-      { name: 'amount', label: 'Amount', type: 'number', step: '0.01', required: true },
+      { name: 'amount', label: 'Amount (PKR)', type: 'number', step: '0.01', required: true },
       { name: 'description', label: 'Description', type: 'textarea' },
       { name: 'transaction_date', label: 'Date', type: 'date', required: true, defaultToday: true },
     ],

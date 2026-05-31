@@ -17,6 +17,7 @@ import reportRoutes from './routes/reports';
 import notificationRoutes from './routes/notifications';
 import userRoutes from './routes/users';
 import dashboardRoutes from './routes/dashboard';
+import shopRoutes from './routes/shops';
 
 import { errorHandler, notFound } from './middleware/errorHandler';
 
@@ -53,6 +54,7 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/shops', shopRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
 // Health check

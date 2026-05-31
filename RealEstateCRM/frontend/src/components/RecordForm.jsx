@@ -52,6 +52,70 @@ export default function RecordForm({ fields = [], initial = null, onSubmit, onCa
     }
   }, [values.sale_id])
 
+  // Auto-fill total_price and colony_id from selected plot or shop
+  useEffect(() => {
+    const hasPriceField = fields.some((f) => f.name === 'total_price')
+    if (!hasPriceField) return
+    let price = null
+    if (values.plot_id && remoteOptions['plot_id']) {
+      const plot = remoteOptions['plot_id'].find((o) => String(o.id) === String(values.plot_id))
+      if (plot && plot.total_price) price = Number(plot.total_price)
+    }
+    if (values.shop_id && remoteOptions['shop_id']) {
+      const shop = remoteOptions['shop_id'].find((o) => String(o.id) === String(values.shop_id))
+      if (shop && shop.price) price = Number(shop.price)
+    }
+    if (price !== null && price !== undefined) {
+      setValues((prev) => {
+        let next = { ...prev, total_price: price }
+        for (const f of fields) {
+          if (typeof f.compute === 'function') {
+            next[f.name] = f.compute(next)
+          }
+        }
+        return next
+      })
+    }
+  }, [values.plot_id, values.shop_id, remoteOptions['plot_id'], remoteOptions['shop_id']])
+
+  // Auto-fill colony_id when plot or shop is selected
+  useEffect(() => {
+    if (!fields.some((f) => f.name === 'colony_id')) return
+    let colonyId = null
+    if (values.plot_id && remoteOptions['plot_id']) {
+      const plot = remoteOptions['plot_id'].find((o) => String(o.id) === String(values.plot_id))
+      if (plot && plot.colony_id) colonyId = plot.colony_id
+    }
+    if (values.shop_id && remoteOptions['shop_id']) {
+      const shop = remoteOptions['shop_id'].find((o) => String(o.id) === String(values.shop_id))
+      if (shop && shop.colony_id) colonyId = shop.colony_id
+    }
+    if (colonyId !== null && colonyId !== undefined && String(values.colony_id) !== String(colonyId)) {
+      setValues((prev) => ({ ...prev, colony_id: colonyId }))
+    }
+  }, [values.plot_id, values.shop_id, remoteOptions['plot_id'], remoteOptions['shop_id']])
+
+  // Clear plot_id / shop_id when colony changes and they no longer belong
+  useEffect(() => {
+    if (!fields.some((f) => f.name === 'colony_id')) return
+    setValues((prev) => {
+      let next = { ...prev }
+      if (values.plot_id && remoteOptions['plot_id']) {
+        const plot = remoteOptions['plot_id'].find((o) => String(o.id) === String(values.plot_id))
+        if (plot && plot.colony_id && String(plot.colony_id) !== String(values.colony_id)) {
+          next.plot_id = ''
+        }
+      }
+      if (values.shop_id && remoteOptions['shop_id']) {
+        const shop = remoteOptions['shop_id'].find((o) => String(o.id) === String(values.shop_id))
+        if (shop && shop.colony_id && String(shop.colony_id) !== String(values.colony_id)) {
+          next.shop_id = ''
+        }
+      }
+      return next
+    })
+  }, [values.colony_id])
+
   const visibleFields = useMemo(
     () => fields.filter((f) => {
       if (isEdit && f.createOnly) return false
@@ -81,6 +145,12 @@ export default function RecordForm({ fields = [], initial = null, onSubmit, onCa
       if (f.required && (v === '' || v === null || v === undefined)) errs[f.name] = `${f.label} is required`
       if (f.minLength && typeof v === 'string' && v.length > 0 && v.length < f.minLength) errs[f.name] = `${f.label} must be at least ${f.minLength} characters`
       if (f.type === 'email' && v && !/^\S+@\S+\.\S+$/.test(String(v))) errs[f.name] = 'Invalid email'
+    }
+    // Sale form: at least one of plot or shop must be selected
+    const hasPlotField = fields.some((f) => f.name === 'plot_id')
+    const hasShopField = fields.some((f) => f.name === 'shop_id')
+    if (hasPlotField && hasShopField && !values.plot_id && !values.shop_id) {
+      errs['plot_id'] = 'Select a Plot or a Shop'
     }
     setErrors(errs)
     return Object.keys(errs).length === 0
@@ -144,7 +214,7 @@ export default function RecordForm({ fields = [], initial = null, onSubmit, onCa
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
               {f.label}{f.required && <span className="text-red-500">*</span>}
             </label>
-            <FieldInput field={f} value={values[f.name]} onChange={(v) => setField(f.name, v)} options={remoteOptions[f.name]} />
+            <FieldInput field={f} value={values[f.name]} onChange={(v) => setField(f.name, v)} options={remoteOptions[f.name]} values={values} />
             {errors[f.name] && <p className="mt-1 text-xs text-red-500">{errors[f.name]}</p>}
           </div>
         ))}
@@ -180,7 +250,7 @@ function buildInitial(fields, initial) {
   return out
 }
 
-function FieldInput({ field, value, onChange, options }) {
+function FieldInput({ field, value, onChange, options, values }) {
   const baseClass = 'input'
   if (field.type === 'computed') {
     return (
@@ -264,12 +334,16 @@ function FieldInput({ field, value, onChange, options }) {
     )
   }
   if (field.type === 'remote-select') {
+    let opts = options || []
+    if (typeof field.filterOptions === 'function') {
+      opts = opts.filter((opt) => field.filterOptions(opt, values))
+    }
     return (
       <select className={baseClass} value={value || ''} onChange={(e) => onChange(e.target.value)}>
         <option value="">-- Select --</option>
-        {(options || []).map((opt) => (
+        {opts.map((opt) => (
           <option key={opt[field.valueKey]} value={opt[field.valueKey]}>
-            {opt[field.labelKey] || opt[field.valueKey]}
+            {field.formatLabel ? field.formatLabel(opt) : (opt[field.labelKey] || opt[field.valueKey])}
           </option>
         ))}
       </select>
