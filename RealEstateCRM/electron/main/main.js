@@ -406,7 +406,7 @@ function setupAutoUpdater() {
   if (!autoUpdater || !app.isPackaged) return
 
   autoUpdater.autoDownload = false
-  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.autoInstallOnAppQuit = false
   autoUpdater.logger = { info: logInfo, warn: logWarn, error: logError, debug: () => {} }
 
   // GitHub provider is auto-configured from package.json build.publish.

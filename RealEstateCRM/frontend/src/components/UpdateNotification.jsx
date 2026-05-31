@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 
 const initialState = {
   visible: false,
@@ -20,7 +20,6 @@ function formatReleaseNotes(notes) {
 export default function UpdateNotification() {
   const [update, setUpdate] = useState(initialState)
   const [busy, setBusy] = useState(false)
-  const autoInstallTimer = useRef(null)
 
   useEffect(() => {
     if (!window.desktopAPI?.onUpdateEvent) return undefined
@@ -57,37 +56,10 @@ export default function UpdateNotification() {
           visible: true,
           status: 'downloaded',
           info: payload.info || current.info,
-          message: 'Download complete. Restarting to apply the update...',
+          message: 'Update downloaded. Click "Restart and Install" to apply.',
           percent: 100,
           toVersion: payload.info?.version || current.toVersion,
         }))
-        // Auto-trigger install after a short delay so user sees the "complete" UI.
-        if (autoInstallTimer.current) clearTimeout(autoInstallTimer.current)
-        autoInstallTimer.current = setTimeout(async () => {
-          setUpdate((current) => ({
-            ...current,
-            status: 'installing',
-            message: 'Restarting application to apply the update. Your data is safe.',
-          }))
-          try {
-            const result = await window.desktopAPI?.installUpdate?.()
-            if (result?.error) {
-              setBusy(false)
-              setUpdate((current) => ({
-                ...current,
-                status: 'error',
-                message: `Could not start the installer: ${result.error}`,
-              }))
-            }
-          } catch (e) {
-            setBusy(false)
-            setUpdate((current) => ({
-              ...current,
-              status: 'error',
-              message: `Install failed: ${e.message || e}`,
-            }))
-          }
-        }, 1800)
         return
       }
 
@@ -128,7 +100,6 @@ export default function UpdateNotification() {
 
     return () => {
       try { off && off() } catch (_) {}
-      if (autoInstallTimer.current) clearTimeout(autoInstallTimer.current)
     }
   }, [])
 
@@ -139,6 +110,34 @@ export default function UpdateNotification() {
 
     if (update.status === 'installed') {
       setUpdate({ ...initialState })
+      return
+    }
+
+    if (update.status === 'downloaded') {
+      setBusy(true)
+      setUpdate((current) => ({
+        ...current,
+        status: 'installing',
+        message: 'Restarting application to apply the update. Your data is safe.',
+      }))
+      try {
+        const result = await window.desktopAPI?.installUpdate?.()
+        if (result?.error) {
+          setBusy(false)
+          setUpdate((current) => ({
+            ...current,
+            status: 'error',
+            message: `Could not start the installer: ${result.error}`,
+          }))
+        }
+      } catch (e) {
+        setBusy(false)
+        setUpdate((current) => ({
+          ...current,
+          status: 'error',
+          message: `Install failed: ${e.message || e}`,
+        }))
+      }
       return
     }
 
@@ -185,9 +184,11 @@ export default function UpdateNotification() {
       ? 'Update Failed'
       : update.status === 'downloading'
         ? 'Downloading Update'
-        : update.status === 'installing' || update.status === 'downloaded'
-          ? 'Restarting...'
-          : 'Update Available'
+        : update.status === 'downloaded'
+          ? 'Update Ready'
+          : update.status === 'installing'
+            ? 'Restarting...'
+            : 'Update Available'
 
   const primaryLabel = isSuccess
     ? 'Got it'
@@ -195,9 +196,11 @@ export default function UpdateNotification() {
       ? 'Retry Download'
       : update.status === 'downloading'
         ? `Downloading ${update.percent}%`
-        : update.status === 'downloaded' || update.status === 'installing'
-          ? 'Restarting...'
-          : 'Download & Install'
+        : update.status === 'downloaded'
+          ? 'Restart and Install'
+          : update.status === 'installing'
+            ? 'Restarting...'
+            : 'Download & Install'
 
   const primaryDisabled = busy || isBusyState
 

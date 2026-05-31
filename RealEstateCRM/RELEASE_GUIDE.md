@@ -36,14 +36,14 @@ Before your first release, update `package.json` with your actual GitHub owner a
 {
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME.git"
+    "url": "https://github.com/engr-mr-huraira/Hashmi-Builders--Computer-Software-.git"
   },
   "build": {
     "publish": [
       {
         "provider": "github",
-        "owner": "YOUR_GITHUB_USERNAME",
-        "repo": "YOUR_REPO_NAME",
+        "owner": "engr-mr-huraira",
+        "repo": "Hashmi-Builders--Computer-Software-",
         "channel": "latest",
         "releaseType": "release"
       }

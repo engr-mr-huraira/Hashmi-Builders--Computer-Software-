@@ -275,6 +275,31 @@ function FieldInput({ field, value, onChange, options }) {
       </select>
     )
   }
+  if (field.type === 'cnic') {
+    return (
+      <input
+        className={baseClass}
+        type="text"
+        value={formatCNIC(value)}
+        onChange={(e) => onChange(stripCNIC(e.target.value))}
+        placeholder={field.placeholder}
+        maxLength={15}
+        readOnly={field.readOnly}
+      />
+    )
+  }
+  if (field.type === 'phone') {
+    return (
+      <input
+        className={baseClass}
+        type="tel"
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={field.placeholder}
+        readOnly={field.readOnly}
+      />
+    )
+  }
   return (
     <input
       className={baseClass}
@@ -287,4 +312,17 @@ function FieldInput({ field, value, onChange, options }) {
       readOnly={field.readOnly}
     />
   )
+}
+
+function stripCNIC(raw) {
+  if (!raw) return ''
+  return String(raw).replace(/\D/g, '').slice(0, 13)
+}
+
+function formatCNIC(raw) {
+  const digits = stripCNIC(raw)
+  if (digits.length === 0) return ''
+  if (digits.length <= 5) return digits
+  if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`
+  return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`
 }
